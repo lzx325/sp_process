@@ -1,0 +1,39 @@
+name: sp_process
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.11
+  # version pins below follow palom's requirements
+  - numpy<2
+  - scikit-image>=0.18,<0.20
+  - tifffile<=2024.7.2
+  - zarr>=2.17,<3  # tif_utils.py also uses zarr.hierarchy.Group (zarr v2 API)
+  - pandas
+  - dask
+  - anndata
+  - scanpy
+  - leidenalg
+  - python-igraph
+  - matplotlib
+  - seaborn
+  - geopandas
+  - shapely
+  - opencv
+  - lxml
+  - pillow
+  - loguru
+  - tqdm
+  - ipython
+  - ipykernel
+  # remaining palom dependencies
+  - imagecodecs
+  - scikit-learn
+  - fire
+  - pint
+  - ome-types
+  - yamale
+  - openslide-python
+  - pip
+  - pip:
+      - palom

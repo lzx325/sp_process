@@ -15,6 +15,14 @@ IMAGE_EXTENSIONS = {'.tif', '.tiff', '.svs', '.png', '.jpg', '.jpeg', '.ndpi', '
 
 
 def get_image_dimensions(image_path):
+    """Return (width, height) of the full-resolution image without loading pixels."""
+    if os.path.splitext(image_path)[1].lower() in {'.tif', '.tiff', '.svs', '.ndpi', '.scn'}:
+        with tifffile.TiffFile(image_path) as tif:
+            series = tif.series[0]
+            axes, shape = series.axes, series.shape
+            return shape[axes.index('X')], shape[axes.index('Y')]
+    # Whole-slide images exceed PIL's decompression-bomb limit; we only read the header.
+    Image.MAX_IMAGE_PIXELS = None
     with Image.open(image_path) as img:
         width, height = img.size
     return width, height
@@ -110,7 +118,6 @@ def main():
             mask = polygon_to_mask(
                 shapes_list=shapes_list,
                 metadata_df=metadata_df,
-                output_file=output_path,
                 classification_col=args.classification_col,
                 image_width=image_width,
                 image_height=image_height,

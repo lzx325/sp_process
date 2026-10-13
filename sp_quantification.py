@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import anndata as ad
+from anndata.experimental import concat_on_disk
 from tqdm import trange, tqdm
 from pathlib import Path
 import tifffile
@@ -21,24 +22,40 @@ def aggregate_cell_marker_expressions(
     cell_ids = None,
     channel_names = None
 ):
+    """
+    Mean intensity of each channel within each cell.
+
+    codex_img (C, H, W) may be a numpy or dask array; it is read one channel at a
+    time so only a single plane is held in memory.
+    """
     if codex_img.dtype == np.uint16:
-        codex_img = codex_img.astype(np.float32)/65535
+        max_val = 65535
     elif codex_img.dtype == np.uint8:
-        codex_img = codex_img.astype(np.float32)/255
+        max_val = 255
     else:
         assert False, "codex_img dtype unknown"
     if cell_ids is not None:
         assert len(cell_ids) == np.max(seg_mask), "Length of cell_ids must match the number of cells in seg_mask"
         assert len(set(cell_ids)) == len(cell_ids), "cell_ids must be unique"
-        
+
     assert tuple(seg_mask.shape) == tuple(codex_img.shape[1:])
-    n_cells = np.max(seg_mask)
+    n_cells = int(np.max(seg_mask))
     n_channels = codex_img.shape[0]
-    
+
+    # Only labeled pixels contribute, so index them once and reuse for every channel
+    fg_idx = np.flatnonzero(seg_mask)
+    fg_labels = seg_mask.ravel()[fg_idx]
+    pixel_counts = np.bincount(fg_labels, minlength=n_cells + 1)[1:]
+
     sp_exp_mat = np.zeros((n_cells, n_channels))
-    for cell_index in range(1,n_cells+1):
-        row_indices, col_indices = np.where(seg_mask == cell_index)
-        sp_exp_mat[cell_index-1, :] = codex_img[:, row_indices, col_indices].mean(axis=1)
+    for c in range(n_channels):
+        channel = codex_img[c]
+        # Parallelism comes from the per-core worker pool; dask's thread pool on top only adds lock contention
+        channel = channel.compute(scheduler='synchronous') if hasattr(channel, 'compute') else np.asarray(channel)
+        sums = np.bincount(fg_labels, weights=channel.ravel()[fg_idx], minlength=n_cells + 1)[1:]
+        with np.errstate(invalid='ignore', divide='ignore'):
+            sp_exp_mat[:, c] = sums / pixel_counts / max_val
+        del channel
 
     adata = ad.AnnData(X = sp_exp_mat)
     if cell_ids is None:
@@ -51,32 +68,47 @@ def aggregate_cell_marker_expressions(
     return adata
 
 
+def get_slide_name(sample_name):
+    """'TA-237A_10-10' -> 'TA-237A' (the core position follows the last underscore)."""
+    return sample_name.rsplit('_', 1)[0]
+
+
 def process_one_image(args):
-    image_file, mask_dir = args
+    """Quantify one core and write it to per_core_dir. Returns the written path, or None on failure."""
+    image_file, mask_dir, per_core_dir = args
     image_file = Path(image_file)
     mask_dir = Path(mask_dir)
     sample_name = image_file.stem.split('.')[0]
 
     mask_path = mask_dir / f"{sample_name}.tif"
+    core_fp = Path(per_core_dir) / f"{sample_name}.h5ad"
+    if core_fp.exists():
+        return core_fp
 
     try:
-        tif, arr, metadata = open_wsi(image_file)
-        channel_names = metadata.get('channel_names')
-        tif.close()
-
         mask = tifffile.imread(mask_path)
 
         n_cells = int(np.max(mask))
         cell_ids = [f"{i}--{sample_name}" for i in range(1, n_cells + 1)]
 
-        adata = aggregate_cell_marker_expressions(
-            arr.compute() if hasattr(arr, 'compute') else arr,
-            mask,
-            cell_ids=cell_ids,
-            channel_names=channel_names
-        )
+        tif, arr, metadata = open_wsi(image_file)
+        try:
+            adata = aggregate_cell_marker_expressions(
+                arr,
+                mask,
+                cell_ids=cell_ids,
+                channel_names=metadata.get('channel_names')
+            )
+        finally:
+            tif.close()
         adata.obs['sample'] = sample_name
-        return adata
+        adata.obs['slide'] = get_slide_name(sample_name)
+
+        # Write then rename so an interrupted run never leaves a truncated file that gets reused
+        tmp_fp = core_fp.with_suffix('.h5ad.tmp')
+        adata.write(tmp_fp)
+        tmp_fp.rename(core_fp)
+        return core_fp
 
     except Exception as e:
         logger.error(f"Error processing {sample_name}: {e}, skipping.")
@@ -86,6 +118,10 @@ def process_one_image(args):
 def quantify_sp_images(input_image_dir, mask_dir, output_fp, n_workers=None, slide_split=False):
     """
     Quantify spatial proteomics images and save as concatenated AnnData.
+
+    Each core is quantified independently and written to <output_stem>_per_core/<sample>.h5ad;
+    cores already present there are skipped, so an interrupted run can be resumed. The per-core
+    files are then concatenated on disk, without loading them all into memory.
 
     Args:
         input_image_dir (str or Path): Directory containing SP images (.ome.tiff, .qptiff, .tif, .tiff)
@@ -98,6 +134,8 @@ def quantify_sp_images(input_image_dir, mask_dir, output_fp, n_workers=None, sli
     mask_dir = Path(mask_dir)
     output_fp = Path(output_fp)
     output_fp.parent.mkdir(parents=True, exist_ok=True)
+    per_core_dir = output_fp.with_name(f"{output_fp.stem}_per_core")
+    per_core_dir.mkdir(exist_ok=True)
 
     # List image files
     image_extensions = ['.ome.tiff', '.qptiff', '.tif', '.tiff']
@@ -105,30 +143,27 @@ def quantify_sp_images(input_image_dir, mask_dir, output_fp, n_workers=None, sli
     for ext in image_extensions:
         image_files.extend(input_image_dir.glob(f'*{ext}'))
     image_files = sorted(set(image_files))  # Remove duplicates if any
-    task_args = [(image_file, mask_dir) for image_file in image_files]
-    # task_args = [(image_file, mask_dir) for image_file in image_files if image_file.name=='TA-150_12-1.IF.ome.tif'] # for debug
-    logger.info(f"Processing {len(task_args)} images")
+    task_args = [(image_file, mask_dir, per_core_dir) for image_file in image_files]
+    # task_args = [(image_file, mask_dir, per_core_dir) for image_file in image_files if image_file.name=='TA-150_12-1.IF.ome.tif'] # for debug
+    logger.info(f"Processing {len(task_args)} images, per-core outputs in {per_core_dir}")
 
     with Pool(processes=n_workers) as pool:
         results = list(tqdm(pool.imap(process_one_image, task_args), total=len(task_args), desc="Quantifying images"))
-    adatas = [r for r in results if r is not None]
+    core_fps = [r for r in results if r is not None]
 
-    if not adatas:
+    if not core_fps:
         raise ValueError("No valid samples processed.")
 
-    # Concatenate
-    adata_combined = ad.concat(adatas, join='outer')
-    
     if slide_split:
-        adata_combined.obs['slide'] = adata_combined.obs['sample'].astype(str).str.split('-').str[0]
-        for slide_name in sorted(adata_combined.obs['slide'].unique()):
-            slide_adata = adata_combined[adata_combined.obs['slide'] == slide_name].copy()
+        slide_to_fps = {}
+        for fp in core_fps:
+            slide_to_fps.setdefault(get_slide_name(fp.stem), []).append(fp)
+        for slide_name in sorted(slide_to_fps):
             slide_output_fp = output_fp.with_name(f"{output_fp.stem}_{slide_name}{output_fp.suffix}")
-            slide_adata.write(slide_output_fp)
-            logger.info(f"Saved slide AnnData for {slide_name} to {slide_output_fp}")
+            concat_on_disk(slide_to_fps[slide_name], slide_output_fp, join='outer')
+            logger.info(f"Saved slide AnnData for {slide_name} ({len(slide_to_fps[slide_name])} cores) to {slide_output_fp}")
     else:
-        # Write output
-        adata_combined.write(output_fp)
+        concat_on_disk(core_fps, output_fp, join='outer')
         logger.info(f"Saved concatenated AnnData to {output_fp}")
 
 
