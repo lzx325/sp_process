@@ -37,3 +37,4 @@ dependencies:
   - pip
   - pip:
       - palom
+      - bbknn  # sc.external.pp.bbknn in sp_cell_type_clustering.py

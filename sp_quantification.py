@@ -8,6 +8,7 @@ import tifffile
 from loguru import logger
 from multiprocessing import Pool
 from tif_utils import open_wsi
+from sp_marker_definitions import MARKER_ALIASES_TMA2025
 
 logger.remove()
 logger.add(
@@ -101,6 +102,7 @@ def process_one_image(args):
             )
         finally:
             tif.close()
+        adata.var_names = [MARKER_ALIASES_TMA2025.get(m, m) for m in adata.var_names]
         adata.obs['sample'] = sample_name
         adata.obs['slide'] = get_slide_name(sample_name)
 

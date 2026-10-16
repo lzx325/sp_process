@@ -101,3 +101,9 @@ CELL_TYPE_MARKERS_TMA2025 = {
     "M2":["CD163"],
     "DC":["CD11c","HLA-DR"]
 }
+# Channel names found in image metadata -> canonical names used in FULL_MARKERS_TMA2025
+MARKER_ALIASES_TMA2025 = {
+    "Pan-Cytokeratin": "Pan-CK",
+    "aSMA": "ASMA",
+    "EpCAM": "EPCAM",
+}

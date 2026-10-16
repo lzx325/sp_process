@@ -15,14 +15,14 @@ if false; then
     --input_image_dir "$root_dir" \
     --mask_dir "$root_dir/cellpose" \
     --output_fp "$root_dir/clustering/quantification.h5ad" \
-    --n_workers 8 
+    --n_workers 8
 fi
 
 if true; then
-    data_dir="$HOME/tma2025_3"
+    data_dir="/blue/chenyijiang/lzx325.stanford/data/tma2025_3/TA-29"
     python "$PROJECT_DIR/sp_quantification.py" \
     --input_image_dir "$data_dir/CODEX_registered" \
-    --mask_dir "$data_dir/cellpose/masks" \
+    --mask_dir "$data_dir/cellpose_masks" \
     --output_fp "$data_dir/clustering/quantification.h5ad" \
     --n_workers 8 \
     --slide-split
