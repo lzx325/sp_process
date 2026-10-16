@@ -37,3 +37,5 @@ dependencies:
   - pip
   - pip:
       - palom
+      # cellpose pinned to commit a9f8bfc (PR #1423, "Gray saturation fix")
+      - cellpose @ git+https://github.com/MouseLand/cellpose.git@a9f8bfcde43033247309e3982747df9fe9f09315
