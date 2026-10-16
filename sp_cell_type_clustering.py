@@ -20,11 +20,6 @@ from sp_marker_definitions import CELL_TYPE_MARKERS_TMA2025
 
 sc.settings.verbosity = 3
 
-def flatten_list(nested_list):
-    """Flatten a nested list."""
-    return [item for sublist in nested_list for item in sublist]
-
-
 def subset_markers(adata, marker_dict):
     markers = list(dict.fromkeys(m for ms in marker_dict.values() for m in ms))
     markers_present = [m for m in markers if m in adata.var_names]
@@ -33,15 +28,18 @@ def subset_markers(adata, marker_dict):
         logger.warning(f"Markers not found in adata and will be skipped: {missing}")
     return adata[:, markers_present].copy()
 
-def preprocess(adata, n_comps=30):
+def preprocess(adata, use_bbknn=False):
     adata.X[np.isnan(adata.X)] = 0
     adata.layers["raw"] = adata.X.copy()
     sc.pp.scale(adata)
-    sc.tl.pca(adata, n_comps=n_comps, svd_solver='arpack')
-    sc.external.pp.bbknn(adata, batch_key="sample")
+    sc.tl.pca(adata, svd_solver='arpack')
+    if use_bbknn:
+        sc.external.pp.bbknn(adata, batch_key="sample",trim=30)
+    else:
+        sc.pp.neighbors(adata)
 
 def leiden(adata):
-    sc.tl.leiden(adata, flavor="igraph")
+    sc.tl.leiden(adata)
 
 def umap(adata):
     sc.tl.umap(adata)
@@ -54,6 +52,7 @@ if __name__=="__main__":
     parser.add_argument("--run_preprocess", action="store_true", help="Whether to run the preprocess step")
     parser.add_argument("--run_leiden", action="store_true", help="Whether to run the Leiden clustering step")
     parser.add_argument("--run_umap", action="store_true", help="Whether to run the UMAP dimensionality reduction step")
+    parser.add_argument("--use_bbknn", action="store_true", help="Build the neighbor graph with BBKNN (batch_key='sample') instead of sc.pp.neighbors")
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -70,7 +69,7 @@ if __name__=="__main__":
         logger.info(f"Loaded AnnData with {adata_raw.n_obs} cells and {adata_raw.n_vars} markers")
         # adata = subset_markers(adata_raw, CELL_TYPE_MARKERS_TMA2025) 
         adata = subset_markers(adata_raw, CELL_TYPE_MARKERS_TMA2025)
-        preprocess(adata, n_comps=10)
+        preprocess(adata, use_bbknn=args.use_bbknn)
         adata.write_h5ad(fp_preprocessed)
         logger.info(f"Saved preprocessed anndata to {fp_preprocessed}")
     else:
