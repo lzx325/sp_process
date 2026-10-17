@@ -14,6 +14,7 @@ Example:
     python run_pipeline.py --config configs/TA-29.yaml --steps 3-8 --dry-run
 """
 import argparse
+import os
 import shlex
 import subprocess
 import sys
@@ -46,15 +47,18 @@ class Runner:
     def step_cfg(self, name):
         return self.cfg["steps"].get(name) or {}
 
-    def run(self, step_name, cmd):
-        """Run `cmd` (list of args) inside the conda env configured for `step_name`."""
+    def run(self, step_name, cmd, env=None):
+        """Run `cmd` (list of args) inside the conda env configured for `step_name`.
+
+        `env` optionally replaces the subprocess environment (default: inherit os.environ).
+        """
         step = self.step_cfg(step_name)
         env_prefix = self.cfg["conda_envs"][step.get("env", "default")]
         cmd = [str(c) for c in cmd] + [str(a) for a in step.get("extra_args", [])]
         shell_cmd = f"source {shlex.quote(str(SETUP_CONDA))} {shlex.quote(env_prefix)} && {shlex.join(cmd)}"
         print(f"[{step_name}] {shlex.join(cmd)}", flush=True)
         if not self.dry_run:
-            subprocess.run(["bash", "-c", shell_cmd], check=True)
+            subprocess.run(["bash", "-c", shell_cmd], check=True, env=env)
 
 
 def py(script, *args):
@@ -103,13 +107,15 @@ def step_registration(r):
         if step.get("align_he_to_codex", False):
             cmd.append("--align-he-to-codex")
         cmds.append(cmd)
+    # run headless: unset DISPLAY so no X11 connection is attempted
+    env = {k: v for k, v in os.environ.items() if k != "DISPLAY"}
     n_jobs = step.get("n_jobs", 1)
     if n_jobs <= 1:
         for cmd in cmds:
-            r.run("registration", cmd)
+            r.run("registration", cmd, env=env)
     else:
         with ThreadPoolExecutor(max_workers=n_jobs) as pool:
-            for fut in [pool.submit(r.run, "registration", cmd) for cmd in cmds]:
+            for fut in [pool.submit(r.run, "registration", cmd, env) for cmd in cmds]:
                 fut.result()
 
 
