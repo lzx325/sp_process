@@ -22,9 +22,7 @@ import pandas as pd
 from loguru import logger
 from tqdm import tqdm
 
-# Allow importing tif_io from registration module
-sys.path.append("/mnt/radonc-li02/private/lzx325/virtual-biomarking/tools/preprocess/he_codex/0_registeration")
-sys.path.append("/mnt/radonc-li02/private/lzx325/virtual-biomarking/tools/preprocess/he_codex/6_1_sp_other")
+
 from tif_utils import open_wsi, write_ome_tiff
 
 

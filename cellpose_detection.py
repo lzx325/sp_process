@@ -2,12 +2,13 @@
 
 Usage:
     python cellpose_detection.py --input-dir INPUT_DIR --output-dir OUTPUT_DIR \
-        [--n_gpu N]
+        [--n_gpu N] [--dapi_channel C]
 
 If --n_gpu is greater than 1, the input files are split across multiple
 Cellpose worker processes, one per visible GPU.
 """
 import os
+import re
 import argparse
 import glob
 import multiprocessing as mp
@@ -25,10 +26,12 @@ def parse_args():
     parser.add_argument("--input-dir", required=True, help="Directory of CODEX_registered OME-TIFF files.")
     parser.add_argument("--output-dir", required=True, help="Directory to write cellpose masks.")
     parser.add_argument("--n_gpu", type=int, default=1, help="Number of GPUs to use (default: 1).")
+    parser.add_argument("--dapi_channel", type=int, default=DAPI_CHANNEL,
+                        help=f"Index of the DAPI channel in the OME-TIFF (default: {DAPI_CHANNEL}).")
     return parser.parse_args()
 
 
-def process_files(files, output_dir, gpu_index=None):
+def process_files(files, output_dir, gpu_index=None, dapi_channel=DAPI_CHANNEL):
     use_gpu = gpu_index is not None and torch.cuda.is_available()
     device = torch.device(f"cuda:{gpu_index}") if use_gpu else torch.device("cpu")
     worker = f"gpu={gpu_index}" if use_gpu else "cpu"
@@ -37,7 +40,7 @@ def process_files(files, output_dir, gpu_index=None):
     model = models.CellposeModel(gpu=use_gpu, device=device)
 
     for f in files:
-        name = os.path.basename(f).replace(".IF.ome.tif", "")
+        name = re.sub(r"\.IF\.ome\.tiff?$", "", os.path.basename(f))
         out_mask = os.path.join(output_dir, f"{name}.tif")
         if os.path.exists(out_mask):
             print(f"[skip] {worker} {name}", flush=True)
@@ -47,7 +50,7 @@ def process_files(files, output_dir, gpu_index=None):
         print(f"[load] {worker} {name}", flush=True)
         try:
             with tifffile.TiffFile(f) as tif:
-                dapi = tif.series[0].asarray(key=DAPI_CHANNEL)
+                dapi = tif.series[0].asarray(key=dapi_channel)
         except Exception as e:
             print(f"[error] {worker} {name}: {e}", flush=True)
             continue
@@ -75,12 +78,14 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
 
     files = sorted(glob.glob(os.path.join(args.input_dir, "*.IF.ome.tif")))
+    files += sorted(glob.glob(os.path.join(args.input_dir, "*.IF.ome.tiff")))
     print(f"[init] found {len(files)} files", flush=True)
 
     if args.n_gpu == 1 or not torch.cuda.is_available():
         if args.n_gpu > 1:
             print("[warn] CUDA is not available; running on CPU with one worker", flush=True)
-        process_files(files, args.output_dir, gpu_index=0 if torch.cuda.is_available() else None)
+        process_files(files, args.output_dir, gpu_index=0 if torch.cuda.is_available() else None,
+                      dapi_channel=args.dapi_channel)
         print("[all done]", flush=True)
         return
 
@@ -92,7 +97,7 @@ def main():
     processes = []
     for gpu_index in range(args.n_gpu):
         gpu_files = files[gpu_index::args.n_gpu]
-        process = ctx.Process(target=process_files, args=(gpu_files, args.output_dir, gpu_index))
+        process = ctx.Process(target=process_files, args=(gpu_files, args.output_dir, gpu_index, args.dapi_channel))
         process.start()
         processes.append(process)
 

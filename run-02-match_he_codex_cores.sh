@@ -1,7 +1,22 @@
 set -e
-source "$HOME/anaconda3/etc/profile.d/conda.sh"
-conda deactivate
-conda activate "/mnt/radonc-li02/private/lzx325/env/scimap2"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$PROJECT_DIR/setup_conda.sh" "/mnt/radonc-li02/private/lzx325/env/scimap2"
+
+if true; then
+    data_dir="/mnt/radonc-li02/public/he_codex/raw/tma2025_test"
+    he_dir="$data_dir/tma_cores/HE_TA-29_cores"
+    codex_dir="$data_dir/tma_cores/CODEX_TA-29_cores"
+    he_out_dir="$data_dir/tma_cores/HE_TA-29_cores_matched"
+    codex_out_dir="$data_dir/tma_cores/CODEX_TA-29_cores_matched"
+    mapping_csv="$data_dir/raw_scan/project/external_data/TA-29_metadata.csv"
+
+    python "$PROJECT_DIR/match_he_codex_cores.py" \
+        --he-dir "$he_dir" \
+        --codex-dir "$codex_dir" \
+        --he-out-dir "$he_out_dir" \
+        --codex-out-dir "$codex_out_dir" \
+        --mapping-csv "$mapping_csv"
+fi
 
 if false; then
 tma_names=("TA-70")
@@ -23,7 +38,7 @@ tma_names=("TA-70")
     done
 fi
 
-if true; then
+if false; then
     he_dir="/mnt/radonc-li02/public/he_codex/raw/Jimpi/raw_scan/project/external_data/HE_1046553_cores/"
     codex_dir="/mnt/radonc-li02/public/he_codex/raw/Jimpi/raw_scan/project/external_data/IF_1046553_cores/"
     he_out_dir="/mnt/radonc-li02/public/he_codex/raw/Jimpi/raw_scan/project/external_data/HE_1046553_cores_matched/"

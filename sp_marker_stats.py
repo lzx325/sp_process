@@ -21,6 +21,30 @@ def _find_tissue_mask(wsi_path: Path, mask_dir: Path):
     return None
 
 
+def _parse_channel_list(s: str):
+    """Parse 'A,B,C' into ['A', 'B', 'C']. Raises ValueError on empty or duplicate names."""
+    names = [n.strip() for n in s.split(",")]
+    if any(not n for n in names):
+        raise ValueError(f"Empty channel name in '{s}'")
+    dups = sorted({n for n in names if names.count(n) > 1})
+    if dups:
+        raise ValueError(f"Duplicate channel names in '{s}': {dups}")
+    return names
+
+
+def _parse_rename_map(s: str):
+    """Parse 'k1:v1,k2:v2' into {'k1': 'v1', 'k2': 'v2'}. Raises ValueError on malformed pairs."""
+    mapping = {}
+    for pair in s.split(","):
+        if ":" not in pair:
+            raise ValueError(f"Malformed pair '{pair}' (expected <old>:<new>)")
+        k, v = (x.strip() for x in pair.split(":", 1))
+        if not k or not v:
+            raise ValueError(f"Malformed pair '{pair}' (empty old or new name)")
+        mapping[k] = v
+    return mapping
+
+
 def _compute_channel_stats(channel_arr: np.ndarray, mask=None, max_pixels=None):
     """
     Compute summary statistics for a single 2-D channel array (H, W).
@@ -56,7 +80,7 @@ def _compute_channel_stats(channel_arr: np.ndarray, mask=None, max_pixels=None):
     }
 
 
-def _process_wsi(wsi_path: Path, tissue_mask_dir, max_pixels):
+def _process_wsi(wsi_path: Path, tissue_mask_dir, max_pixels, force_channel_names=None):
     """Process one WSI file. Returns (stem, channel_names, file_stats). Raises on failure."""
     mask = None
     if tissue_mask_dir is not None:
@@ -68,7 +92,16 @@ def _process_wsi(wsi_path: Path, tissue_mask_dir, max_pixels):
 
     tif, arr, metadata = open_wsi(wsi_path)
 
-    channel_names = metadata.get("channel_names")
+    if force_channel_names is not None:
+        if len(force_channel_names) != arr.shape[0]:
+            tif.close()
+            raise ValueError(
+                f"'{wsi_path.name}' has {arr.shape[0]} channels but "
+                f"{len(force_channel_names)} names were forced"
+            )
+        channel_names = force_channel_names
+    else:
+        channel_names = metadata.get("channel_names")
     if channel_names is None:
         channel_names = [f"Channel_{i}" for i in range(arr.shape[0])]
         logger.warning(f"No channel names in '{wsi_path.name}'; using generic names: {channel_names}")
@@ -106,7 +139,28 @@ def main():
         "--n_workers", type=int, default=1,
         help="Number of parallel worker processes (default: 1)."
     )
+    name_group = parser.add_mutually_exclusive_group()
+    name_group.add_argument(
+        "--force_channel_names", default=None,
+        help="Comma-separated channel names (e.g. 'DAPI,CD3,CD8') overriding the image metadata. "
+             "Every image must have exactly this many channels."
+    )
+    name_group.add_argument(
+        "--rename_channel_names", default=None,
+        help="Comma-separated <old>:<new> pairs (e.g. 'DAPI:Nuclei,CD3e:CD3') applied to channel names "
+             "in the saved statistics. Pairs whose <old> name is not a channel are ignored."
+    )
     args = parser.parse_args()
+
+    force_channel_names = None
+    rename_map = None
+    try:
+        if args.force_channel_names is not None:
+            force_channel_names = _parse_channel_list(args.force_channel_names)
+        if args.rename_channel_names is not None:
+            rename_map = _parse_rename_map(args.rename_channel_names)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     input_dir = Path(args.input_dir)
     output_fp = Path(args.output_fp)
@@ -122,11 +176,29 @@ def main():
 
     logger.info(f"Found {len(wsi_files)} WSI file(s) in {input_dir}")
 
+    # --- Check channel counts against forced names before any heavy work ---
+    if force_channel_names is not None:
+        mismatched = []
+        for wsi_path in wsi_files:
+            tif, arr, _ = open_wsi(wsi_path)
+            n_channels = arr.shape[0]
+            tif.close()
+            if n_channels != len(force_channel_names):
+                mismatched.append((wsi_path.name, n_channels))
+        if mismatched:
+            details = "\n".join(f"  {name}: {n} channels" for name, n in mismatched)
+            logger.error(
+                f"--force_channel_names has {len(force_channel_names)} names, "
+                f"but these file(s) have a different channel count:\n{details}"
+            )
+            sys.exit(1)
+
     # --- Parallel processing ---
     raw_results = {}  # wsi_path -> (stem, channel_names, file_stats)
     with ProcessPoolExecutor(max_workers=args.n_workers) as executor:
         futures = {
-            executor.submit(_process_wsi, wsi_path, tissue_mask_dir, args.max_pixels): wsi_path
+            executor.submit(_process_wsi, wsi_path, tissue_mask_dir, args.max_pixels,
+                            force_channel_names): wsi_path
             for wsi_path in wsi_files
         }
         for future in tqdm(as_completed(futures), total=len(futures), desc="WSI files"):
@@ -175,6 +247,15 @@ def main():
             for field in scalar_fields
         }
         averaged[ch_name]["sampled_pixel_count"] = int(sum(s["sampled_pixel_count"] for s in per_slide))
+
+    # --- Rename channels (pairs whose old name is not a channel are ignored) ---
+    if rename_map is not None:
+        new_names = [rename_map.get(ch, ch) for ch in averaged]
+        collisions = sorted({n for n in new_names if new_names.count(n) > 1})
+        if collisions:
+            logger.error(f"--rename_channel_names produces duplicate channel names: {collisions}")
+            sys.exit(1)
+        averaged = {rename_map.get(ch, ch): stats for ch, stats in averaged.items()}
 
     # --- Write output ---
     output_fp.parent.mkdir(parents=True, exist_ok=True)

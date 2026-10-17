@@ -1,7 +1,19 @@
 set -e
-source "$HOME/anaconda3/etc/profile.d/conda.sh"
-conda deactivate
-conda activate "/mnt/radonc-li02/private/lzx325/env/scimap2"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$PROJECT_DIR/setup_conda.sh" "/mnt/radonc-li02/private/lzx325/env/scimap2"
+
+if true; then
+    tma_name="TA-29"
+    data_dir="/mnt/radonc-li02/public/he_codex/raw/tma2025_test"
+    for fp in $data_dir/tma_cores/CODEX_${tma_name}_cores_matched/*.IF.ome.tif; do
+        fn=$(basename "$fp")
+        core_name=${fn%.IF.ome.tif}
+        codex_fp="$data_dir/tma_cores/CODEX_${tma_name}_cores_matched/${core_name}.IF.ome.tif"
+        he_fp="$data_dir/tma_cores/HE_${tma_name}_cores_matched/${core_name}.HE.ome.tif"
+        output_dir="$data_dir/tma_cores/${tma_name}_registration"
+        printf '%s\t%s\t%s\n' "$codex_fp" "$he_fp" "$output_dir"
+    done | parallel --line-buffer -j 1 --colsep '\t' python "$PROJECT_DIR/codex_registeration_batch.py" {1} {2} {3}
+fi
 
 if false; then
     tma_names=("TA-258")
@@ -17,7 +29,7 @@ if false; then
     done | parallel --line-buffer -j 1 --colsep '\t' python codex_registeration_batch.py {1} {2} {3}
 fi
 
-if true; then
+if false; then
     tma_name="1046553"
     for fp in /mnt/radonc-li02/public/he_codex/raw/Jimpi/raw_scan/project/external_data/IF_${tma_name}_cores_matched/*.IF.ome.tif; do
         fn=$(basename "$fp")

@@ -7,7 +7,7 @@ ThreadTools.setParallelism(96)
 // Project Dir
 def project = getProject()
 def project_dir = project.getPath().parent
-def code_dir = Paths.get("/mnt/radonc-Li02_vol2/public/he_codex/raw/qupath_scripts/")
+def code_dir = Paths.get("/mnt/radonc-li02/private/lzx325/sp_process/qupath_scripts/")
 
 // Get the current image data
 def imageData = getCurrentImageData()
@@ -18,7 +18,7 @@ def imageServer = imageData.getServer()
 // Get the PixelType
 def pixelType = imageServer.getPixelType()
 
-def imageType = "mIHC"
+def imageType = "HE"
 def json_fp = ""
 // Load thresholder json
 switch(pixelType) {
@@ -37,8 +37,8 @@ def json = new File(json_fp).text
 // clear all objects
 removeAllObjects()
 
-double minArea = 20000
-double minHoleArea = 10000
+double minArea = 10
+double minHoleArea = 1
 //
 //double minArea = 10r
 //double minHoleArea = 10
