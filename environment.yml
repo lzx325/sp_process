@@ -26,6 +26,7 @@ dependencies:
   - tqdm
   - ipython
   - ipykernel
+  - pyyaml  # run_pipeline.py config
   # remaining palom dependencies
   - imagecodecs
   - scikit-learn

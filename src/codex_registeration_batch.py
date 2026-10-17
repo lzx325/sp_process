@@ -15,8 +15,6 @@ from lxml import etree
 from loguru import logger
 
 import palom
-sys.path.append("/mnt/radonc-li02/private/lzx325/virtual-biomarking/tools/preprocess/he_codex/0_registeration")
-sys.path.append("/mnt/radonc-li02/private/lzx325/virtual-biomarking/tools/preprocess/he_codex/6_1_sp_other")
 from tif_utils import open_wsi, write_ome_tiff
 
 cv.setNumThreads(30)

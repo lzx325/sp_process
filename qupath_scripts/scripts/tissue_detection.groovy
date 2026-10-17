@@ -7,7 +7,11 @@ ThreadTools.setParallelism(96)
 // Project Dir
 def project = getProject()
 def project_dir = project.getPath().parent
-def code_dir = Paths.get("/mnt/radonc-li02/private/lzx325/sp_process/qupath_scripts/")
+// qupath_scripts/ dir, resolved from this script's path (qupath_scripts/scripts/<this>.groovy).
+// QuPath sets "qupath.script.file" when the script is run from a saved file (script editor or CLI).
+if (!binding.hasVariable("qupath.script.file"))
+    throw new RuntimeException("Cannot resolve script location: save the script to a file and run it from there")
+def code_dir = Paths.get(binding.getVariable("qupath.script.file")).toAbsolutePath().parent.parent
 
 // Get the current image data
 def imageData = getCurrentImageData()
@@ -37,8 +41,8 @@ def json = new File(json_fp).text
 // clear all objects
 removeAllObjects()
 
-double minArea = 10
-double minHoleArea = 1
+double minArea = 1000
+double minHoleArea = 1000
 //
 //double minArea = 10r
 //double minHoleArea = 10

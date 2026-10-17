@@ -33,6 +33,19 @@ def _resolve_ometif(path: Path, base_name: str) -> Path | None:
     return None
 
 
+def _clear_symlinks(path: Path, dry_run: bool) -> int:
+    """Remove all symlinks directly under path (regular files are left untouched)."""
+    removed = 0
+    for p in path.iterdir():
+        if p.is_symlink():
+            if dry_run:
+                print(f"Would remove link: {p}")
+            else:
+                p.unlink()
+            removed += 1
+    return removed
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Create symlinks for matched HE–CODEX TMA cores from a mapping CSV."
@@ -43,6 +56,12 @@ def main() -> None:
     parser.add_argument("--codex-out-dir", type=Path, required=True, help="Output directory for CODEX symlinks.")
     parser.add_argument("--mapping-csv", type=Path, required=True, help="CSV with tma_id_he, tma_id_codex, tma_id.")
     parser.add_argument("--dry-run", action="store_true", help="Only print what would be done.")
+    parser.add_argument(
+        "--clear_existing_links",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Remove all existing symlinks in he_out_dir and codex_out_dir before linking (default: enabled).",
+    )
     args = parser.parse_args()
 
     df = pd.read_csv(args.mapping_csv)
@@ -56,6 +75,10 @@ def main() -> None:
 
     args.he_out_dir.mkdir(parents=True, exist_ok=True)
     args.codex_out_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.clear_existing_links:
+        removed = sum(_clear_symlinks(d, args.dry_run) for d in (args.he_out_dir, args.codex_out_dir))
+        print(f"Removed {removed} existing symlinks.")
 
     linked = 0
     skipped_missing = 0

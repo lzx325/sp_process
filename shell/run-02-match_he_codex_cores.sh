@@ -1,16 +1,16 @@
 set -e
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$PROJECT_DIR/setup_conda.sh" "/mnt/radonc-li02/private/lzx325/env/scimap2"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$PROJECT_DIR/shell/setup_conda.sh" "/mnt/radonc-li02/private/lzx325/env/scimap2"
 
 if true; then
     data_dir="/mnt/radonc-li02/public/he_codex/raw/tma2025_test"
-    he_dir="$data_dir/tma_cores/HE_TA-29_cores"
-    codex_dir="$data_dir/tma_cores/CODEX_TA-29_cores"
-    he_out_dir="$data_dir/tma_cores/HE_TA-29_cores_matched"
-    codex_out_dir="$data_dir/tma_cores/CODEX_TA-29_cores_matched"
+    he_dir="$data_dir/TA-29/HE_cores"
+    codex_dir="$data_dir/TA-29/CODEX_cores"
+    he_out_dir="$data_dir/TA-29/HE_cores_matched"
+    codex_out_dir="$data_dir/TA-29/CODEX_cores_matched"
     mapping_csv="$data_dir/raw_scan/project/external_data/TA-29_metadata.csv"
 
-    python "$PROJECT_DIR/match_he_codex_cores.py" \
+    python "$PROJECT_DIR/src/match_he_codex_cores.py" \
         --he-dir "$he_dir" \
         --codex-dir "$codex_dir" \
         --he-out-dir "$he_out_dir" \
@@ -28,8 +28,7 @@ tma_names=("TA-70")
         codex_out_dir="/mnt/radonc-li02/public/he_codex/raw/tma2025_3/raw_scan/project/external_data/CODEX_${tma_name}_cores_matched"
         mapping_csv="/mnt/radonc-li02/public/he_codex/raw/tma2025_3/raw_scan/project/external_data/${tma_name}_metadata.csv"
 
-        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        python "$SCRIPT_DIR/match_he_codex_cores.py" \
+        python "$PROJECT_DIR/src/match_he_codex_cores.py" \
             --he-dir "$he_dir" \
             --codex-dir "$codex_dir" \
             --he-out-dir "$he_out_dir" \
@@ -45,8 +44,7 @@ if false; then
     codex_out_dir="/mnt/radonc-li02/public/he_codex/raw/Jimpi/raw_scan/project/external_data/IF_1046553_cores_matched/"
     mapping_csv="/mnt/radonc-li02/public/he_codex/raw/Jimpi/raw_scan/project/external_data/1046553_metadata.csv"
 
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    python "$SCRIPT_DIR/match_he_codex_cores.py" \
+    python "$PROJECT_DIR/src/match_he_codex_cores.py" \
         --he-dir "$he_dir" \
         --codex-dir "$codex_dir" \
         --he-out-dir "$he_out_dir" \
