@@ -21,17 +21,20 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-import yaml
+from omegaconf import OmegaConf
 
 PROJECT_DIR = Path(__file__).resolve().parent
 SRC_DIR = PROJECT_DIR / "src"
 SETUP_CONDA = PROJECT_DIR / "shell" / "setup_conda.sh"
 
+# ${join:<list>} in a config -> the list items as one comma-separated string (e.g. for --force_channel_names)
+OmegaConf.register_resolver("join",lambda items, sep=",": sep.join(str(x) for x in items))
+
 
 def load_config(fp):
-    with open(fp) as f:
-        cfg = yaml.safe_load(f)
-    fmt = {"data_dir": cfg["data_dir"], "tma_name": cfg["tma_name"]}
+    # Resolve ${key} interpolations, then work with a plain dict
+    cfg = OmegaConf.to_container(OmegaConf.load(fp), resolve=True)
+    fmt ={"data_dir": cfg["data_dir"], "tma_name": cfg["tma_name"]}
     fmt["tma_dir"] = cfg.get("tma_dir", "{data_dir}/{tma_name}").format(**fmt)
     cfg["tma_dir"] = Path(fmt["tma_dir"])
     cfg["inputs"] = {k: Path(v.format(**fmt)) for k, v in cfg.get("inputs", {}).items()}
