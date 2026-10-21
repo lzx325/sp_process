@@ -7,7 +7,7 @@ import tifffile
 import zarr
 from lxml import etree
 from loguru import logger
-
+import palom
 
 def get_ome_tiff_description_xml(**metadata):
     sizeC,sizeX,sizeY=metadata["sizeC"],metadata["sizeX"],metadata["sizeY"]
@@ -289,7 +289,7 @@ def write_ome_tiff(
     maxworkers : int, optional
         Max workers for tifffile (default 15).
     """
-    import palom
+    
     C, H, W = arr.shape
     if channel_names is None:
         channel_names = [f"Channel_{i}" for i in range(C)]

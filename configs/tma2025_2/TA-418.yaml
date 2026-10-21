@@ -1,0 +1,64 @@
+# Pipeline config for one TMA. Run with:
+#   python run_pipeline.py --config configs/TA-29.yaml [--steps 1-8] [--dry-run]
+#
+# Path strings may use the placeholders {data_dir}, {tma_name} and {tma_dir}.
+# Any value may refer to another key with ${key} (OmegaConf interpolation).
+
+tma_name: TA-418
+data_dir: /media/lzx325/Elements/lzx325/tma2025_2
+tma_dir: "{data_dir}/{tma_name}"
+
+conda_envs:
+  default: sp_process
+  cellpose: cellpose
+
+inputs:
+  he_tma_wsi: "{data_dir}/raw_scan/HE/{tma_name}.svs"
+  codex_tma_wsi: "{data_dir}/raw_scan/CODEX/{tma_name}.qptiff"
+  he_tma_tsv: "{data_dir}/raw_scan/project/external_data/HE_{tma_name}.tsv"
+  codex_tma_tsv: "{data_dir}/raw_scan/project/external_data/CODEX_{tma_name}.tsv"
+  metadata_csv: "{data_dir}/raw_scan/project/external_data/{tma_name}_metadata.csv"
+  # produced manually by running qupath_scripts/scripts/tissue_detection.groovy in QuPath
+  tissue_detection_geojson_dir: "{tma_dir}/project/external_data/tissue_detection/geojson"
+
+# FULL_MARKERS_TMA2025 names (src/sp_marker_definitions.py), in image channel order.
+# Passed to the scripts below as one comma-separated string via ${join:${channel_names}}.
+channel_names: [
+  DAPI, CD8, Pan-Cytokeratin, CD3e, CD163,
+  CD20, CD4, FAP, CD138, CD11c, CD66b, aSMA,
+  CD68, Ki67, CD31, Collagen IV, Granzyme B, MMP9,
+  PD-1, CD44, CD79a, PD-L1, E-cadherin, Tryptase,
+  LAG3, Mac2/Galectin-3, Vimentin, FOXP3, CD14, CDK4,
+  EpCAM, CD21, EGFR, CD45, MPO, C-Myc, TCF-1, GATA3,
+  ICOS, HLA-A, Bcl-2, HLA-E, CD45RO, VISTA, HIF1A, CD39,
+  CD40, CD57, HLA-DR, CD34, CD107a, Podoplanin, TROP2,
+  HER2, ER, Claudin18.2, C-Met, CD56, PSMA, VEGFA,
+]
+
+# Every step also accepts:
+#   env: <key in conda_envs>   (default: "default")
+#   extra_args: [...]          (appended verbatim to the step's command)
+steps:
+  extract_cores:
+    core_diameter_um: 1300
+  match_cores: {}
+  registration:
+    align_he_to_codex: false
+    n_jobs: 24
+  tissue_mask: {}
+  cellpose:
+    env: cellpose
+    dapi_channel: 0
+    n_gpu: 1
+  marker_stats:
+    n_workers: 8
+    extra_args: [--force_channel_names, "${join:${channel_names}}"]
+  quantification:
+    n_workers: 8
+    slide_split: false
+    extra_args: [--force_channel_names, "${join:${channel_names}}"]
+  clustering:
+    run_preprocess: true
+    run_leiden: true
+    run_umap: true
+    use_bbknn: false
