@@ -5,7 +5,7 @@
 # Any value may refer to another key with ${key} (OmegaConf interpolation).
 
 tma_name: MPR1005Sur_062
-data_dir: /media/lzx325/Elements/lzx325/tma20260901
+data_dir: /blue/chenyijiang/lzx325.stanford/data/tma20260901
 tma_dir: "{data_dir}/{tma_name}"
 
 conda_envs:
@@ -19,7 +19,7 @@ inputs:
   codex_tma_tsv: "{data_dir}/raw_scan/project/external_data/CODEX_{tma_name}.tsv"
   metadata_csv: "{data_dir}/raw_scan/project/external_data/{tma_name}_metadata.csv"
   # produced manually by running qupath_scripts/scripts/tissue_detection.groovy in QuPath
-  tissue_detection_geojson_dir: "{tma_dir}/project/external_data/tissue_detection/geojson"  # TODO: not created yet
+  tissue_detection_geojson_dir: "{tma_dir}/project/external_data/tissue_detection/geojson"
 
 # FULL_MARKERS_TMA2025 names (src/sp_marker_definitions.py), in image channel order.
 # Passed to the scripts below as one comma-separated string via ${join:${channel_names}}.

@@ -27,7 +27,7 @@ dependencies:
   - ipython
   - ipykernel
   - pyyaml
-  - omegaconf  # run_pipeline.py config
+  - omegaconf>=2.4  # run_pipeline.py config; <2.4 register_resolver rejects the nested ${join:${channel_names}}
   # remaining palom dependencies
   - imagecodecs
   - scikit-learn

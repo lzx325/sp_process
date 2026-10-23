@@ -13,9 +13,20 @@ from tif_utils import open_wsi
 
 
 def _find_tissue_mask(wsi_path: Path, mask_dir: Path):
-    """Return first mask file in mask_dir whose name starts with wsi_path's prefix (before first dot), or None."""
+    """Return the tissue mask for wsi_path, or None if there is none.
+
+    qupath_tissue_detection_to_mask.py names masks "<core>_mask.tif", so that exact name
+    is tried first. The glob fallback keeps other mask sets working, but it only accepts a
+    name whose next character after the core is a separator: core "1-1" glob-matches
+    "1-10_mask.tif" as well as its own mask, and "_" (0x5F) sorts after digits, so a plain
+    sorted()[0] hands back the wrong core's tissue - silently, since a mask was found.
+    """
     stem = wsi_path.name.split(".")[0]
-    candidates = sorted(mask_dir.glob(f"{stem}*"))
+    exact = mask_dir / f"{stem}_mask.tif"
+    if exact.exists():
+        return exact
+    candidates = sorted(p for p in mask_dir.glob(f"{stem}*")
+                        if not p.name[len(stem):len(stem) + 1].isalnum())
     if candidates:
         return candidates[0]
     return None

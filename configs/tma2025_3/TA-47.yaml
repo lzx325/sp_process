@@ -5,7 +5,7 @@
 # Any value may refer to another key with ${key} (OmegaConf interpolation).
 
 tma_name: TA-47
-data_dir: /media/lzx325/Elements/lzx325/tma2025_3
+data_dir: /blue/chenyijiang/lzx325.stanford/data/tma2025_3
 tma_dir: "{data_dir}/{tma_name}"
 
 conda_envs:

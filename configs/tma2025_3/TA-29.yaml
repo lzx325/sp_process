@@ -5,7 +5,7 @@
 # Any value may refer to another key with ${key} (OmegaConf interpolation).
 
 tma_name: TA-29
-data_dir: /mnt/radonc-li02/public/he_codex/raw/tma2025_test
+data_dir: /blue/chenyijiang/lzx325.stanford/data/tma2025_3
 tma_dir: "{data_dir}/{tma_name}"   # root for all derived outputs
 
 conda_envs:

@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 import tifffile
 from PIL import Image
@@ -70,15 +71,19 @@ def main():
 
     geojson_files = [f for f in os.listdir(args.geojson_dir) if f.lower().endswith('.geojson')]
     if not geojson_files:
-        print(f"No GeoJSON files found in {args.geojson_dir}")
-        return
+        sys.exit(f"No GeoJSON files found in {args.geojson_dir}")
+
+    fatal = []    # problems that must stop the pipeline
+    blank = []    # cores that got an all-zero mask instead of real tissue
+    written = set()
 
     for geojson_fname in tqdm(sorted(geojson_files), desc="Converting GeoJSON to mask"):
         geojson_path = os.path.join(args.geojson_dir, geojson_fname)
         prefix = get_file_prefix(geojson_fname)
 
         if prefix not in image_index:
-            print(f"[SKIP] No matching image found for '{geojson_fname}' (prefix: '{prefix}')")
+            print(f"  [ERROR] No matching image found for '{geojson_fname}' (prefix: '{prefix}')")
+            fatal.append(f"{geojson_fname}: no matching image (prefix '{prefix}')")
             continue
 
         image_path = image_index[prefix]
@@ -88,6 +93,7 @@ def main():
             image_width, image_height = get_image_dimensions(image_path)
         except Exception as e:
             print(f"  [ERROR] Could not read image dimensions from '{image_path}': {e}")
+            fatal.append(f"{geojson_fname}: unreadable image '{image_path}': {e}")
             continue
 
         try:
@@ -101,31 +107,65 @@ def main():
             gdf = gpd.GeoDataFrame.from_features(features)
         except Exception as e:
             print(f"  [ERROR] Could not read GeoJSON '{geojson_path}': {e}")
+            fatal.append(f"{geojson_fname}: unreadable GeoJSON: {e}")
             continue
 
+        output_path = os.path.join(args.output_dir, prefix + "_mask.tif")
+
+        # An all-zero mask is the right answer for a core QuPath found no tissue in, and
+        # the fallback when polygons cannot be rasterised. Either way the core keeps a
+        # mask file: downstream then sees a core with no tissue instead of silently
+        # matching a neighbour's mask by name prefix.
+        mask = None
         if gdf.empty:
-            print(f"  [SKIP] GeoJSON is empty: {geojson_fname}")
+            print(f"  [BLANK] GeoJSON has no features: {geojson_fname}")
+            blank.append(f"{prefix}: GeoJSON has no features")
+        else:
+            metadata_df = pd.DataFrame(gdf.drop(columns='geometry')).reset_index(drop=True)
+            try:
+                mask = polygon_to_mask(
+                    shapes_list=list(gdf.geometry),
+                    metadata_df=metadata_df,
+                    classification_col=args.classification_col,
+                    image_width=image_width,
+                    image_height=image_height,
+                )
+            except Exception as e:
+                print(f"  [ERROR] Failed to create mask for '{geojson_fname}': {e}")
+                blank.append(f"{prefix}: {type(e).__name__}: {e}")
+
+        if mask is None:
+            mask = np.zeros((image_height, image_width), dtype=np.uint32)
+
+        # Write via a pid-unique tmp name so a killed job leaves no half-written TIFF
+        # for step 6 to read as a valid mask.
+        try:
+            tmp = f"{output_path}.{os.getpid()}.tmp"
+            tifffile.imwrite(tmp, mask.astype("uint32"), compression='zlib')
+            os.replace(tmp, output_path)
+        except Exception as e:
+            print(f"  [ERROR] Could not write '{output_path}': {e}")
+            fatal.append(f"{prefix}: could not write mask: {e}")
             continue
 
-        shapes_list = list(gdf.geometry)
-        metadata_df = pd.DataFrame(gdf.drop(columns='geometry'))
-        metadata_df = metadata_df.reset_index(drop=True)
+        written.add(prefix)
+        print(f"  Saved mask: {output_path}")
 
-        output_fname = prefix + "_mask.tif"
-        output_path = os.path.join(args.output_dir, output_fname)
+    # Every image must end up with a mask: a gap is what lets step 6 pick up the wrong
+    # one, so it fails the step rather than being left for a reader to notice.
+    missing = sorted(set(image_index) - written)
+    if missing:
+        fatal.append(f"{len(missing)} image(s) have no mask: {missing[:10]}")
 
-        try:
-            mask = polygon_to_mask(
-                shapes_list=shapes_list,
-                metadata_df=metadata_df,
-                classification_col=args.classification_col,
-                image_width=image_width,
-                image_height=image_height,
-            )
-            tifffile.imwrite(output_path, mask.astype("uint32"), compression='zlib')
-            print(f"  Saved mask: {output_path}")
-        except Exception as e:
-            print(f"  [ERROR] Failed to create mask for '{geojson_fname}': {e}")
+    print(f"[summary] images={len(image_index)} masks={len(written)} "
+          f"blank={len(blank)} failed={len(fatal)}")
+    for note in blank:
+        print(f"[summary] blank-mask {note}")
+
+    if fatal:
+        for note in fatal:
+            print(f"[fatal] {note}")
+        sys.exit(f"Tissue mask conversion failed for {len(fatal)} item(s); see [fatal] above")
 
 if __name__ == "__main__":
     main()
